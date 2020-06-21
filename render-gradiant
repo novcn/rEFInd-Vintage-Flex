@@ -1,0 +1,73 @@
+#!/usr/bin/env bash
+
+set -e 
+
+#source ~/.cache/wal/colors.sh
+
+# Get the difference for each 
+dir="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+
+rm -f "$dir/tmp/"*
+
+foreground=${1:?}
+
+# For each color, compare it with the desired output color to get an RGB shift amount
+rgb_shift_amnt() {
+  local desired=$(sed 's/#//g' <<< ${1:?} | tr '[:lower:]' '[:upper:]')
+  local initial=$(sed 's/#//g' <<< ${2:?} | tr '[:lower:]' '[:upper:]')
+  local output=""
+
+  for idx in $(seq 1 3); do
+    init=$(fold -w2 <<< "$initial" | awk "NR == $idx")
+    des=$(fold -w2 <<< "$desired" | awk "NR == $idx")
+    inter=$(echo "ibase=16; $init - $des" | bc | tr '\n' ' ')
+    inter=$(echo "$inter * -1" | bc) # TODO: simplify this 
+    output="$output $inter"
+  done
+
+  echo "$output"
+}
+
+# Shift colors by rgb amounts
+shift_colors() {
+  initial=${1:?}
+  initial=$(cut -c -7 <<< "$initial")
+  rshift=${2:?}
+  gshift=${3:?}
+  bshift=${4:?}
+  inter=$(colort -l -r "$rshift" "$initial")
+  inter=$(colort -l -g "$gshift" "$inter")
+  desired=$(colort l -b "$bshift" "$inter")
+  echo "$desired"
+}
+
+for icon in "$dir/icons/dm/bk/"*; do 
+  icon_name=$(basename "$icon")
+  echo "processing $icon_name..."
+
+  cp "$icon" "$dir/tmp/$icon_name"
+  icon="$dir/tmp/$icon_name"
+
+  # Get every color in the image except for the color that appears most (in this case our background)
+  initial_colors=$(convert $icon txt:- | awk '{print $3}' | rg -v pixel | sort | uniq -c | sort -n | head -n -1 | awk '{print $2}')
+  most_prevalent=$(tail -n1 <<< "$initial_colors")
+
+  #rgb_shift_amnt "$most_prevalent" "$foreground"
+  cshift=$(rgb_shift_amnt "$foreground" "$most_prevalent")
+  rshift=$(awk '{print $1}' <<< "$cshift")
+  gshift=$(awk '{print $2}' <<< "$cshift")
+  bshift=$(awk '{print $3}' <<< "$cshift")
+
+  inter_icon=tmp/inter_${icon_name}
+  cp "$icon" "$inter_icon"
+  for initial in ${initial_colors[@]}; do
+    alpha=$(sed 's/#//g' <<< "$initial" | fold -w2 | tail -n1)
+    initial=$(cut -c -7 <<< "$initial")
+  
+    desired=$(shift_colors "$initial" "$rshift" "$gshift" "$bshift")
+    convert "$inter_icon" -fuzz 0% -fill "${desired}${alpha}" -opaque "${initial}${alpha}" "$inter_icon"
+  done
+  
+  mv "$inter_icon" "$dir/output/icons/$icon_name"
+done
+
