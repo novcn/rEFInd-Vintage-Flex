@@ -1,0 +1,269 @@
+#!/usr/bin/env bash
+
+set -e
+
+RVF_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+
+#
+# Defaults options
+#
+VERBOSE=0
+COLOR="#000000"
+WAL=0
+declare TEXT_COLOR
+declare ICON_COLOR
+TEXT=""
+TEXT_BORDER="-"
+TEXT_Y_BORDER_PADDING=12
+TEXT_X_BORDER_PADDING=4
+
+show_help() {
+    cat > /dev/stdout <<EOF
+${0} [ options ]
+
+  options:
+    -h | --help         show help
+    -v | --verbose      verbose mode
+    --color             color for rendered foreground objects, defaults to #000000
+    --text-color        color for rendered text. falls back to --color if not set
+    --icon-color        color for rendered icons. falls back to --color if not set
+    --wal               use colors from wal cache (~/.cache/wal)
+    --text              text or file with text to transpose on background image
+    --font              font to use for transposed text. defaults to CodingFontTobi
+    --text-border       character to use as a border. defaults to empty
+    --y-boder-padding   y-cartesian spaces around the border of text. defaults to 12
+    --x-boder-padding   x-cartesian spaces around the border of text. defaults to 4
+EOF
+}
+
+while [[ "$#" -gt 0 ]]; do
+  case $1 in
+    -h|--help)
+      show_help
+      exit 0
+      ;;
+    -v|--verbose)
+      VERBOSE=1
+      ;;
+    --c|--color)
+      COLOR="$2"
+      shift
+      ;;
+    --text-color)
+      TEXT_COLOR="$2"
+      shift
+      ;;
+    --wal)
+      WAL=1
+      ;;
+    --icon-color)
+      ICON_COLOR="$2"
+      shift
+      ;;
+    --text)
+      TEXT="$2"
+      shift
+      ;;
+    --text-border)
+      TEXT_BORDER="$2"
+      shift
+      ;;
+    --text-x-border-padding)
+      TEXT_X_BORDER_PADDING="$2"
+      shift
+      ;;
+    --text-y-border-padding)
+      TEXT_Y_BORDER_PADDING="$2"
+      shift
+      ;;
+    *)
+      echo "Unknown parameter passed: $1"
+      show_help
+      exit 1
+      ;;
+  esac
+  shift
+done
+
+trace() {
+  [[ "$VERBOSE" == "1" ]] && {
+    echo -e "\\033[93mtrace: \\033[97m$*\\033[39m"
+  }
+}
+
+info() {
+  echo -e " \\033[96m--> \\033[97m$*\\033[39m"
+}
+
+clean() {
+  # remove files in tmp
+  for file in "${RVF_DIR}/tmp/"*; do
+    trace "removing $file"
+    rm -f "$file"
+  done
+
+  # remove output icons
+  for file in "${RVF_DIR}/output/icons/"*; do
+    trace "removing $file"
+    rm -f "$file"
+  done
+
+  # remove icon directory
+  [ -e "${RVF_DIR/output/icons}" ] || {
+    trace "removing directory ./output/icons"
+    rmdir "${RVF_DIR}/output/icons"
+  }
+
+  # remove other output files
+  for file in "${RVF_DIR}/output/icons/"*; do
+    trace "removing $file"
+    rm -f "$file"
+  done
+}
+
+#
+# Build center aligned text
+#
+build_text() {
+  local text="$TEXT"
+  # the max line length
+  IFS=$'\n'
+  max_len=0
+  for line in $text; do 
+    line_len=$(wc -c <<< "$line")
+    if [ "$line_len" -gt "$max_len" ]; then
+      max_len=$line_len
+    fi
+  done
+
+  x_border=$(echo "$max_len" + "$x_border_shift" | bc)
+  printf " "
+  eval printf '–%.0s' {0..${x_border}}
+  echo ""
+
+  # todo: use y_border_shift variable
+  text=$(printf '\n %.0s' {0..1}; echo "$text")
+  text=$(echo -n "$text"; printf '\n %.0s' {0..0})
+
+  # print each line shifted such that text is centered
+  for line in $text; do 
+    line_len=$(wc -c <<< "$line")
+    justify_amt=$(echo "(($x_border - $line_len) / 2) - 1" | bc)
+    x_right_border=$(echo "$x_border - $line_len - $justify_amt" | bc)
+
+    # print each line prepending $justify_amt spaces
+    printf "|"
+    eval printf '\ %.0s' {0..${justify_amt}}
+    echo -n "$line"
+    eval printf '\ %.0s' {0..${x_right_border}}
+    printf "|"
+    echo ""
+  done
+
+  printf " "
+  eval printf '–\%.0s' {0..${x_border}}
+  echo ""
+}
+
+#
+# Render passed $TEXT onto background if it exists, otherwise just copy over the chosen background
+#
+render_background() {
+  [[ "$TEXT" != "" ]] && {
+    text_color="${TEXT_COLOR:-${COLOR}}"
+    output=$(build_text)
+    convert ${RVF_DIR}/backgrounds/darkstatic.png \
+      -font CodingFontTobi -gravity North -fill "$foreground" -pointsize 32 -annotate +0+30 "$output" \
+      "${RVF_DIR}/output/background.png"
+  } || {
+    cp "${RVF_DIR}/backgrounds/darkstatic.png" "${RVF_DIR}/output/background.png"
+  }
+}
+
+#
+# For each color, compare it with the desired output color to get an RGB shift amount
+#
+rgb_shift_amnt() {
+  local desired=$(sed 's/#//g' <<< ${1:?} | tr '[:lower:]' '[:upper:]')
+  local initial=$(sed 's/#//g' <<< ${2:?} | tr '[:lower:]' '[:upper:]')
+  local output=""
+
+  for idx in $(seq 1 3); do
+    init=$(fold -w2 <<< "$initial" | awk "NR == $idx")
+    des=$(fold -w2 <<< "$desired" | awk "NR == $idx")
+    inter=$(echo "ibase=16; $init - $des" | bc | tr '\n' ' ')
+    inter=$(echo "$inter * -1" | bc) # TODO: simplify this
+    output="$output $inter"
+  done
+
+  echo "$output"
+}
+
+#
+# Shift colors by rgb amounts
+#
+shift_colors() {
+  initial=${1:?}
+  initial=$(cut -c -7 <<< "$initial")
+  rshift=${2:?}
+  gshift=${3:?}
+  bshift=${4:?}
+
+  # TODO: use something other than colort (roll your own in bash?) or package colort along with this
+  inter=$(colort -l -r "$rshift" "$initial")
+  inter=$(colort -l -g "$gshift" "$inter")
+  desired=$(colort l -b "$bshift" "$inter")
+  echo "$desired"
+}
+
+#
+# Render the icons with the passed COLOR as a gradient so that the original icon's noise will be preserved w/ the new color
+#
+render_icons_gradient() {
+  info "rendering icons as gradient. this will take a while..."
+
+  local color="${ICON_COLOR:-${COLOR}}"
+  for icon in "${RVF_DIR}/icons/dm/bk/"*; do
+    icon_name=$(basename "$icon")
+    info "rendering $icon_name"
+
+    cp "$icon" "${RVF_DIR}/tmp/$icon_name"
+    icon="${RVF_DIR}/tmp/$icon_name"
+
+    # Get every color in the image except for the color that appears most (in this case our background)
+    # TODO: there are some icons which the background color isn't the most prevelant. We'll have to update this for that.
+    # Should be able to just assume black is background
+    initial_colors=$(convert $icon txt:- | awk '{print $3}' | rg -v pixel | sort | uniq -c | sort -n | head -n -1 | awk '{print $2}')
+    most_prevalent=$(tail -n1 <<< "$initial_colors")
+
+    #rgb_shift_amnt "$most_prevalent" "$foreground"
+    cshift=$(rgb_shift_amnt "$color" "$most_prevalent")
+    rshift=$(awk '{print $1}' <<< "$cshift")
+    gshift=$(awk '{print $2}' <<< "$cshift")
+    bshift=$(awk '{print $3}' <<< "$cshift")
+
+    inter_icon=tmp/inter_${icon_name}
+    cp "$icon" "$inter_icon"
+    for initial in ${initial_colors[@]}; do
+      alpha=$(sed 's/#//g' <<< "$initial" | fold -w2 | tail -n1)
+      initial=$(cut -c -7 <<< "$initial")
+
+      desired=$(shift_colors "$initial" "$rshift" "$gshift" "$bshift")
+      convert "$inter_icon" -fuzz 0% -fill "${desired}${alpha}" -opaque "${initial}${alpha}" "$inter_icon"
+    done
+
+    mv "$inter_icon" "${RVF_DIR}/output/icons/$icon_name"
+  done
+}
+
+render_icons() {
+  mkdir -p "${RVF_DIR}/output/icons"
+  # TODO: The idea is that you might just want a solid color. If that's the case another function will have to be written / used
+  render_icons_gradient
+}
+
+set -e
+
+clean
+render_background
+render_icons
