@@ -1,0 +1,88 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+THEME_NAME="rEFInd-vintage-flex"
+RVF_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+INCLUDE_STR="include themes/${THEME_NAME}/theme.conf"
+REFIND_DIR=/boot/EFI/Boot
+THEME_DIR="${REFIND_DIR}/themes/${THEME_NAME}"
+VERBOSE=0
+DRY=0
+PROCEED=0
+
+trace() {
+  [[ "$VERBOSE" == "1" ]] && {
+    echo -e "\\033[93mtrace: \\033[97m$*\\033[39m"
+  }
+}
+
+die() {
+  echo "${1:-usage : ${0##*/} [ options ] }" 2>&1
+  [ "$1" ] && exit 1
+  cat > /dev/stdout <<EOF
+${0} [ options ]
+
+  options:
+    -h | --help           show help
+    -v | --verbose        verbose mode
+    -d | --dryrun         run install as a dry run; no modifications will be made
+    -b | --base           the base refind directory. this defaults to /boot/EFI/Boot
+    -y                    proceed with the installation without warning
+EOF
+  exit 0
+}
+
+while [[ "$#" -gt 0 ]]; do
+  case "$1" in
+    -h|--help)
+      die
+      ;;
+    -y)
+      PROCEED=1
+      ;;
+    -v|--verbose)
+      VERBOSE=1
+      ;;
+    -d|--dryrun)
+      DRY=1
+      ;;
+    -b|--base)
+      REFIND_DIR="$2"
+      shift
+      ;;
+    *)
+      die "Unknown parameter passed: $1"
+      ;;
+  esac
+  shift
+done
+
+[ "$PROCEED" == 0 ] && {
+  echo "this script will make modifications to the $REFIND_DIR directory."
+  echo "ensure this the proper directory on your system before running."
+  echo "ensure any files in $REFIND_DIR are backed up before running."
+  echo "you may pass -y to ignore this message."
+  read -p ':: Proceed with installation? [y/n] ' proceed
+  [ "$proceed" != "y" ] && exit 0
+}
+
+if [[ "$DRY" == 1 ]]; then
+  echo mkdir -p "${THEME_DIR}/icons"
+  echo cp "${RVF_DIR}"/output/icons/selection*.png "${THEME_DIR}"
+  echo cp "${RVF_DIR}"/output/icons/* "${THEME_DIR}"/icons/
+  echo cp "${RVF_DIR}"/output/background.png "${THEME_DIR}"/background.png
+else
+  trace "making ${THEME_DIR}/icons directory"
+  sudo mkdir -p "${THEME_DIR}/icons"
+  trace "copying configuration file to ${THEME_DIR}"
+  sudo cp "${RVF_DIR}/theme.conf" "${THEME_DIR}"
+  trace "copying selection icons in ${RVF_DIR}/output/icons to ${THEME_DIR}"
+  sudo cp "${RVF_DIR}"/output/icons/selection*.png "${THEME_DIR}"
+  trace "copying icons in ${RVF_DIR}/output/icons to ${THEME_DIR}/icons/"
+  sudo cp "${RVF_DIR}"/output/icons/* "${THEME_DIR}"/icons/
+  trace "copying background from ${RVF_DIR}/output/background.png to ${THEME_DIR}/background.png"
+  sudo cp "${RVF_DIR}"/output/background.png "${THEME_DIR}"/background.png
+  grep "$INCLUDE_STR" "${REFIND_DIR}/refind.conf" || {
+    echo "$INCLUDE_STR" | sudo tee -a "${REFIND_DIR}/refind.conf"
+  }
+fi

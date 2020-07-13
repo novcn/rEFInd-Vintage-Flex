@@ -8,6 +8,8 @@ COLORSHIFT_URL="https://github.com/novcn/colorshift"
 #
 declare TEXT_COLOR
 declare ICON_COLOR
+FONT="CozetteVector"
+FONT_SIZE=28
 VERBOSE=0
 FOREGROUND="#000000"
 BACKGROUND="#FFFFFF"
@@ -15,10 +17,11 @@ WAL=0
 XRDB=0
 TEXT=""
 TEXT_BORDER="-"
-TEXT_Y_BORDER_PADDING=12
-TEXT_X_BORDER_PADDING=4
-ICONS_DIR="${RVF_DIR}/icons/white/"
-
+TEXT_Y_BORDER_PADDING=2
+TEXT_X_BORDER_PADDING=9
+ICONS_ONLY=0
+BACKGROUND_ONLY=0
+ICONS_DIR="${RVF_DIR}/input/icons/white"
 
 trace() {
   [[ "$VERBOSE" == "1" ]] && {
@@ -46,16 +49,21 @@ ${0} [ options ]
     --wal               use colors from wal cache (~/.cache/wal)
     --xrdb              use colors from xrdb (xrdb -query)
     --text              text or file with text to transpose on background image
-    --font              font to use for transposed text. defaults to CodingFontTobi
+    --font              font to use for transposed text. defaults to CozetteVector
+    --font-size         font size to use for transposed text. defaults to 28
     --text-border       character to use as a border. defaults to empty
     --y-boder-padding   y-cartesian spaces around the border of text. defaults to 12
     --x-boder-padding   x-cartesian spaces around the border of text. defaults to 4
     --disable-progress  disable the progress bar
+    --disable-progress  disable the progress bar
+    --background-only   only render the background
+    --icons-only        only render the icons
 EOF
   exit 0
 }
 
 while [[ "$#" -gt 0 ]]; do
+  trace "$1"
   case "$1" in
     -h|--help)
       die
@@ -69,6 +77,14 @@ while [[ "$#" -gt 0 ]]; do
       ;;
     -b|--background)
       BACKGROUND="$2"
+      shift
+      ;;
+    --font)
+      FONT="$2"
+      shift
+      ;;
+    --font-size)
+      FONT_SIZE="$2"
       shift
       ;;
     --text-color)
@@ -101,9 +117,14 @@ while [[ "$#" -gt 0 ]]; do
       TEXT_Y_BORDER_PADDING="$2"
       shift
       ;;
+    --icons-only)
+      ICONS_ONLY=1
+      ;;
+    --background-only)
+      BACKGROUND_ONLY=1
+      ;;
     --disable-progress)
       DISABLE_PROGRESS=1
-      shift
       ;;
     *)
       die "Unknown parameter passed: $1"
@@ -111,6 +132,19 @@ while [[ "$#" -gt 0 ]]; do
   esac
   shift
 done
+
+trace "VERBOSE : $VERBOSE"
+trace "FOREGROUND : $FOREGROUND"
+trace "BACKGROUND : $BACKGROUND"
+trace "WAL : $WAL"
+trace "XRDB : $XRDB"
+trace "TEXT : $TEXT"
+trace "TEXT_BORDER : $TEXT_BORDER"
+trace "TEXT_Y_BORDER_PADDING : $TEXT_Y_BORDER_PADDING"
+trace "TEXT_X_BORDER_PADDING : $TEXT_X_BORDER_PADDING"
+trace "ICONS_ONLY : $ICONS_ONLY"
+trace "BACKGROUND_ONLY : $BACKGROUND_ONLY"
+trace "ICONS_DIR : $ICONS_DIR"
 
 count_files() {
   printf "%s\n" "$#"
@@ -150,8 +184,9 @@ update_progress() {
 }
 
 [ "$WAL" == "1" ] && {
-  # TODO: check existence
-  source $HOME/.cache/wal/colors.sh
+  WAL_FILE=$HOME/.cache/wa/colors.sh
+  [ ! -a "$WAL_FILE" ] && die "Could not find wal colors file at $WAL_FILE"
+  source "$WAL_FILE"
   FOREGROUND="$foreground"
   BACKGROUND="$background"
 }
@@ -215,44 +250,48 @@ clean() {
 # Build center aligned text
 #
 build_text() {
-  local text="$TEXT"
-  # the max line length
-  IFS=$'\n'
   max_len=0
-  for line in $text; do 
-    line_len=$(wc -c <<< "$line")
-    if [ "$line_len" -gt "$max_len" ]; then
-      max_len=$line_len
-    fi
-  done
+  export IFS=$'\n'
+  while read line; do
+    [ "${#line}" -gt "$max_len" ] && max_len=${#line}
+  done < "$TEXT"
 
   x_border=$(echo "$max_len" + "$TEXT_X_BORDER_PADDING" | bc)
   printf " "
   eval printf '–%.0s' {0..${x_border}}
-  echo ""
+  printf "\n"
 
-  # TODO: use TEXT_Y_BORDER_PADDING variable
-  text=$(printf '\n %.0s' {0..1}; echo "$text")
-  text=$(echo -n "$text"; printf '\n %.0s' {0..0})
+  # Print padding above
+  for ((; i++ < "$TEXT_Y_BORDER_PADDING";)) {
+    printf "|";
+    eval printf '\ %.0s' {0..${x_border}};
+    printf "|\n"
+  }
 
-  # print each line shifted such that text is centered
-  for line in $text; do 
-    line_len=$(wc -c <<< "$line")
-    justify_amt=$(echo "(($x_border - $line_len) / 2) - 1" | bc)
-    x_right_border=$(echo "$x_border - $line_len - $justify_amt" | bc)
+  # print each line shifted such that data is centered
+  while read line; do
+    line_len="${#line}"
+    justify_amt=$(((x_border - line_len) / 2 - 1))
+    x_right_border=$((x_border - line_len - justify_amt - 1))
 
     # print each line prepending $justify_amt spaces
     printf "|"
     eval printf '\ %.0s' {0..${justify_amt}}
-    echo -n "$line"
+    printf "%s" "$line"
     eval printf '\ %.0s' {0..${x_right_border}}
-    printf "|"
-    echo ""
-  done
+    printf "|\n"
+  done < "$TEXT"
+
+  # Print padding below
+  for ((; k++ < "$TEXT_Y_BORDER_PADDING";)) {
+    printf "|";
+    eval printf '\ %.0s' {0..${x_border}};
+    printf "|\n"
+  }
 
   printf " "
   eval printf '–\%.0s' {0..${x_border}}
-  echo ""
+  printf "\n"
 }
 
 #
@@ -263,14 +302,14 @@ render_background() {
   [ "$TEXT" != "" ] && {
     text_color="${TEXT_COLOR:-${FOREGROUND}}"
     output=$(build_text)
-    convert -fill "$BACKGROUND" -tint 90% "${RVF_DIR}/backgrounds/darkstatic.png" "${RVF_DIR}/tmp/background.png"
+    convert -fill "$BACKGROUND" -tint 100% "${RVF_DIR}/input/backgrounds/darkstatic.png" "${RVF_DIR}/tmp/background.png"
     convert "${RVF_DIR}/tmp/background.png" \
-      -font CodingFontTobi -gravity North -fill "$text_color" -pointsize 32 -annotate +0+30 "$output" \
+      -font "$FONT" -gravity North -fill "$text_color" -pointsize "$FONT_SIZE" -annotate +0+30 "$output" \
       "${RVF_DIR}/output/background.png"
   } || {
     # TODO: tint works better when a lightened color is passed. I think to do this optimally we'd convert to HSL
     # increase the light factor and then convert back to RGB hex. See https://www.rapidtables.com/convert/color/hsl-to-rgb.html
-    convert -fill "$BACKGROUND" -tint 90% "${RVF_DIR}/backgrounds/darkstatic.png" "${RVF_DIR}/output/background.png"
+    convert -fill "$BACKGROUND" -tint 100% "${RVF_DIR}/input/backgrounds/darkstatic.png" "${RVF_DIR}/output/background.png"
   }
 }
 
@@ -315,7 +354,7 @@ render_icons_gradient() {
   type fortune &> /dev/null && {
     info "here's your fortune for you to mull over while you wait"
     info ""
-    info $(printf '    %s' $(fortune))
+    info $(fortune)
     info ""
   }
 
@@ -354,9 +393,9 @@ render_icons_gradient() {
       }
     done
 
+    update_progress
     mv "$inter_icon" "${RVF_DIR}/output/icons/$icon_name"
   done
-  update_progress
 }
 
 render_icons() {
@@ -368,6 +407,10 @@ render_icons() {
 clean
 install_colorshift
 
-render_background
-render_icons
+trace "BACKGROUND_ONLY : $BACKGROUND_ONLY"
+
+[ "$ICONS_ONLY" == 0 ] && render_background
+[ "$BACKGROUND_ONLY" == 0 ] && render_icons
+
 info "job's done"
+
