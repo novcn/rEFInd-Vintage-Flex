@@ -1,0 +1,26 @@
+#+TITLE: Flexible Vintage REFInd Theme Generator
+
+* Overview
+This project is based on the [todo](todo) theme, additionally it includes scripts for customization (=render=) and installation (=install=). The goal is to be able to modify your refind theme as easily as you modify your terminal colors (=wal -i wallpaper.jpg=, =xrdb -merge= etc.) so that your rice stays fresh from boot onward.
+** render
+The =render= script is used to generate a theme which is written to the =output= directory. There are two dynamic parts to a theme: the background and the icons.
+*** background
+The background is chosen from the =input/backgrounds/= directory. By default the background color (passed explicitly, or from =wal= or =xrdb= or default) is applied as a tint to the background. A header can also be added to the background image via the =--header= flag.
+*** icons
+Render will output the icons as the chosen =foreground= color. Imperfections are preserved through a process of mapping each individual foreground color in the source icons to a color similar to the =foreground= color passed to the render script. I found this to be the best method for producing icons true to the original, however it does take a significant amount of time. Other icon rendering methods are TODO.
+** install
+Install will write the =theme.conf= and resources in =output= to the proper (given the right options) directories.
+Warning: Make sure that the =--base= directory option matches your refind configuration directory, otherwise install will fail.
+* Screens
+TODO
+* Icons
+TODO base
+TODO sample of outputs
+* Backgrounds
+TODO with border
+TODO non-default border
+* Options
+** Render
+TODO
+** Install
+TODO
