@@ -6,7 +6,7 @@ COLORSHIFT_URL="https://github.com/novcn/colorshift"
 #
 # Defaults options
 #
-declare TEXT_COLOR
+declare HEADER_COLOR
 declare ICON_COLOR
 FONT="CozetteVector"
 FONT_SIZE=28
@@ -15,10 +15,10 @@ FOREGROUND="#000000"
 BACKGROUND="#FFFFFF"
 WAL=0
 XRDB=0
-TEXT=""
-TEXT_BORDER="-"
-TEXT_Y_BORDER_PADDING=2
-TEXT_X_BORDER_PADDING=9
+HEADER=""
+HEADER_BORDER="-"
+HEADER_Y_BORDER_PADDING=2
+HEADER_X_BORDER_PADDING=9
 ICONS_ONLY=0
 BACKGROUND_ONLY=0
 ICONS_DIR="${RVF_DIR}/input/icons/white"
@@ -43,15 +43,15 @@ ${0} [ options ]
     -h | --help         show help
     -v | --verbose      verbose mode
     -f | --foreground   color for rendered foreground objects, defaults to #000000
-    -b | --background  color for rendered background objects, defaults to #FFFFFF
-    --text-color        color for rendered text. falls back to --color if not set
+    -b | --background   color for rendered background objects, defaults to #FFFFFF
+    --header-color      color for rendered text. falls back to --color if not set
     --icon-color        color for rendered icons. falls back to --color if not set
     --wal               use colors from wal cache (~/.cache/wal)
     --xrdb              use colors from xrdb (xrdb -query)
-    --text              text or file with text to transpose on background image
+    --header            header or file with text to transpose on background image
     --font              font to use for transposed text. defaults to CozetteVector
     --font-size         font size to use for transposed text. defaults to 28
-    --text-border       character to use as a border. defaults to empty
+    --header-border     character to use as a border. defaults to empty
     --y-boder-padding   y-cartesian spaces around the border of text. defaults to 12
     --x-boder-padding   x-cartesian spaces around the border of text. defaults to 4
     --disable-progress  disable the progress bar
@@ -88,7 +88,7 @@ while [[ "$#" -gt 0 ]]; do
       shift
       ;;
     --text-color)
-      TEXT_COLOR="$2"
+      HEADER_COLOR="$2"
       shift
       ;;
     --wal)
@@ -102,19 +102,19 @@ while [[ "$#" -gt 0 ]]; do
       shift
       ;;
     --text)
-      TEXT="$2"
+      HEADER="$2"
       shift
       ;;
     --text-border)
-      TEXT_BORDER="$2"
+      HEADER_BORDER="$2"
       shift
       ;;
     --text-x-border-padding)
-      TEXT_X_BORDER_PADDING="$2"
+      HEADER_X_BORDER_PADDING="$2"
       shift
       ;;
     --text-y-border-padding)
-      TEXT_Y_BORDER_PADDING="$2"
+      HEADER_Y_BORDER_PADDING="$2"
       shift
       ;;
     --icons-only)
@@ -138,10 +138,10 @@ trace "FOREGROUND : $FOREGROUND"
 trace "BACKGROUND : $BACKGROUND"
 trace "WAL : $WAL"
 trace "XRDB : $XRDB"
-trace "TEXT : $TEXT"
-trace "TEXT_BORDER : $TEXT_BORDER"
-trace "TEXT_Y_BORDER_PADDING : $TEXT_Y_BORDER_PADDING"
-trace "TEXT_X_BORDER_PADDING : $TEXT_X_BORDER_PADDING"
+trace "HEADER : $HEADER"
+trace "HEADER_BORDER : $HEADER_BORDER"
+trace "HEADER_Y_BORDER_PADDING : $HEADER_Y_BORDER_PADDING"
+trace "HEADER_X_BORDER_PADDING : $HEADER_X_BORDER_PADDING"
 trace "ICONS_ONLY : $ICONS_ONLY"
 trace "BACKGROUND_ONLY : $BACKGROUND_ONLY"
 trace "ICONS_DIR : $ICONS_DIR"
@@ -254,15 +254,15 @@ build_text() {
   export IFS=$'\n'
   while read line; do
     [ "${#line}" -gt "$max_len" ] && max_len=${#line}
-  done < "$TEXT"
+  done < "$HEADER"
 
-  x_border=$(echo "$max_len" + "$TEXT_X_BORDER_PADDING" | bc)
+  x_border=$(echo "$max_len" + "$HEADER_X_BORDER_PADDING" | bc)
   printf " "
   eval printf '–%.0s' {0..${x_border}}
   printf "\n"
 
   # Print padding above
-  for ((; i++ < "$TEXT_Y_BORDER_PADDING";)) {
+  for ((; i++ < "$HEADER_Y_BORDER_PADDING";)) {
     printf "|";
     eval printf '\ %.0s' {0..${x_border}};
     printf "|\n"
@@ -280,10 +280,10 @@ build_text() {
     printf "%s" "$line"
     eval printf '\ %.0s' {0..${x_right_border}}
     printf "|\n"
-  done < "$TEXT"
+  done < "$HEADER"
 
   # Print padding below
-  for ((; k++ < "$TEXT_Y_BORDER_PADDING";)) {
+  for ((; k++ < "$HEADER_Y_BORDER_PADDING";)) {
     printf "|";
     eval printf '\ %.0s' {0..${x_border}};
     printf "|\n"
@@ -295,12 +295,12 @@ build_text() {
 }
 
 #
-# Render passed $TEXT onto background if it exists, otherwise just copy over the chosen background
+# Render passed $HEADER onto background if it exists, otherwise just copy over the chosen background
 #
 render_background() {
   info "rendering background"
-  [ "$TEXT" != "" ] && {
-    text_color="${TEXT_COLOR:-${FOREGROUND}}"
+  [ "$HEADER" != "" ] && {
+    text_color="${HEADER_COLOR:-${FOREGROUND}}"
     output=$(build_text)
     convert -fill "$BACKGROUND" -tint 100% "${RVF_DIR}/input/backgrounds/darkstatic.png" "${RVF_DIR}/tmp/background.png"
     convert "${RVF_DIR}/tmp/background.png" \
