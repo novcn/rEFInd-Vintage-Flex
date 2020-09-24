@@ -1,7 +1,9 @@
 #+TITLE: Flexible Vintage REFInd Theme Generator
 
 * Overview
-This project is based on the [todo](todo) theme, additionally it includes scripts for customization (=render=) and installation (=install=). The goal is to be able to modify your refind theme as easily as you modify your terminal colors (=wal -i wallpaper.jpg=, =xrdb -merge= etc.) so that your rice stays fresh from boot onward.
+This project is based on the [[https://github.com/Lindstream/dm-refind-theme]] theme, additionally it includes scripts for customization (=render=) and installation (=install=). The goal is to be able to modify your refind theme as easily as you modify your terminal colors (=wal -i wallpaper.jpg=, =xrdb -merge= etc.) so that your rice stays fresh from boot onward.
+
+GTODO: Add a dope screen here
 ** render
 The =render= script is used to generate a theme which is written to the =output= directory. There are two dynamic parts to a theme: the background and the icons.
 *** background
@@ -11,7 +13,7 @@ Render will output the icons as the chosen =foreground= color. Imperfections are
 ** install
 Install will write the =theme.conf= and resources in =output= to the proper (given the right options) directories.
 Warning: Make sure that the =--base= directory option matches your refind configuration directory, otherwise install will fail.
-* Screens
+* Additional Screens
 TODO
 * Icons
 TODO base
@@ -21,6 +23,14 @@ TODO with border
 TODO non-default border
 * Options
 ** Render
-TODO
+| --help     | show help    |
+| --verbose  | verbose mode |
+| foreground | color rendered foreground objects,  |
+|            |              |
+|            |              |
+|            |              |
+|            |              |
 ** Install
 TODO
+* Roadmap
+** TODO Some cases of unexpected color outputs in icons. Can reproduce with foreground color of "#CC7666" - produce the icons with that foreground and then look at =convert os_arch.png txt:-= - what's curious is that there aren't any pixels with the original foreground color. I'd expect that the most prevalent color would be the foreground color passed if the algo was working as expected

@@ -55,13 +55,15 @@ ${0} [ options ]
     --y-boder-padding   y-cartesian spaces around the border of text. defaults to 12
     --x-boder-padding   x-cartesian spaces around the border of text. defaults to 4
     --disable-progress  disable the progress bar
-    --disable-progress  disable the progress bar
+    --icons <dir>       directory to render icons from
     --background-only   only render the background
     --icons-only        only render the icons
 EOF
   exit 0
 }
 
+# TODO: add flag for choosing background image
+# TODO: add flag for chosing icon set (if we ever move beyond https://www.deviantart.com/sworiginal/art/Lightness-for-burg-181461810)
 while [[ "$#" -gt 0 ]]; do
   trace "$1"
   case "$1" in
@@ -101,7 +103,7 @@ while [[ "$#" -gt 0 ]]; do
       ICON_COLOR="$2"
       shift
       ;;
-    --text)
+    --header)
       HEADER="$2"
       shift
       ;;
@@ -125,6 +127,10 @@ while [[ "$#" -gt 0 ]]; do
       ;;
     --disable-progress)
       DISABLE_PROGRESS=1
+      ;;
+    --icons)
+      ICONS_DIR="$2"
+      shift
       ;;
     *)
       die "Unknown parameter passed: $1"
@@ -210,10 +216,11 @@ hex_to_rgb() {
 
 within_threshold() {
   hex="${1:?}"
+  thresh="${2:?}"
   rgb=$(hex_to_rgb "$hex")
-  [ $(awk '{print $1}' <<< "$rgb") -gt 150 ] && return 0
-  [ $(awk '{print $2}' <<< "$rgb") -gt 150 ] && return 0
-  [ $(awk '{print $3}' <<< "$rgb") -gt 150 ] && return 0
+  [ $(awk '{print $1}' <<< "$rgb") -gt "$thresh" ] && return 0
+  [ $(awk '{print $2}' <<< "$rgb") -gt "$thresh" ] && return 0
+  [ $(awk '{print $3}' <<< "$rgb") -gt "$thresh" ] && return 0
 }
 
 #
@@ -359,6 +366,7 @@ render_icons_gradient() {
   }
 
   local color="${ICON_COLOR:-${FOREGROUND}}"
+  trace "initial color : $color"
   for icon in "${ICONS_DIR}/"*; do
     update_progress
     icon_name=$(basename "$icon")
@@ -375,7 +383,10 @@ render_icons_gradient() {
     most_prevalent=$(tail -n1 <<< "$initial_colors")
 
     #rgb_shift_amnt "$most_prevalent" "$foreground"
+    trace "color : $color"
+    trace "most prevalent : $most_prevalent"
     cshift=$(rgb_shift_amnt "$color" "$most_prevalent")
+    trace "cshift: $cshift"
     rshift=$(awk '{print $1}' <<< "$cshift")
     gshift=$(awk '{print $2}' <<< "$cshift")
     bshift=$(awk '{print $3}' <<< "$cshift")
@@ -386,7 +397,7 @@ render_icons_gradient() {
       alpha=$(sed 's/#//g' <<< "$initial" | fold -w2 | tail -n1)
       initial=$(cut -c -7 <<< "$initial")
 
-      within_threshold "$initial" && {
+      within_threshold "$initial" 150 && {
         desired=$("$RVF_DIR/util/colorshift" -l -r "$rshift" -g "$gshift" -b "$bshift" "$initial")
         trace "mapping $initial -> $desired $inter_icon"
         convert "$inter_icon" -fuzz 0% -fill "${desired}${alpha}" -opaque "${initial}${alpha}" "$inter_icon"
@@ -398,10 +409,68 @@ render_icons_gradient() {
   done
 }
 
+rgb_extract_hue() {
+  : "${1/\#}"
+  ((r=16#${_:0:2},g=16#${_:2:2},b=16#${_:4:2},a=16#${_:6:2}))
+  R=$(echo "scale=10; $r / 255" | bc)
+  G=$(echo "scale=10; $g / 255" | bc)
+  B=$(echo "scale=10; $b / 255" | bc)
+  max=$(printf '%s\n' "$R" "$G" "$B" | sort -nr | head -n1)
+  min=$(printf '%s\n' "$R" "$G" "$B" | sort -n | head -n1)
+  chroma=$(echo "scale=10; $max - $min" | bc)
+  lightness=$(echo "scale=2; ($max + $min) / 2" | bc)
+  if [[ "$chroma" == "0" ]]; then
+    echo "0"
+    return
+  elif [[ "$R" == "$max" ]]; then
+    hue_radians=$(echo "a(1)*4/3 * ($G - $B) / $chroma" | bc -l)
+  elif [[ "$G" == "$max" ]]; then
+    hue_radians=$(echo "2 + ($B - $R) / $chroma" | bc -l)
+  else
+    hue_radians=$(echo "4 + ($R - $G) / $chroma" | bc -l)
+  fi
+  hue=$(echo "$hue_radians * 57.3" | bc | awk '{ print int($1+0.5) }')
+  echo "$hue"
+}
+
+render_icons_hue_shift() {
+  local color="${ICON_COLOR:-${FOREGROUND}}"
+  foreground_hue=$(rgb_extract_hue "$FOREGROUND")
+  echo "foreground_hue : $foreground_hue"
+  for icon in "${ICONS_DIR}/"*; do
+    icon_name=$(basename "$icon")
+    echo "icon_name: $icon_name"
+
+    total_count=0
+    total_hue=0
+    IFS=$'\n'
+    for line in $(convert "$icon" -colorspace HSV -format %c histogram:info:- | sort -t':' -gr -k 1); do
+      rgb=$(awk '{ print $3 }' <<< "${line/\#}" | cut -c -6)
+      if [[ "$rgb" != "000000" ]]; then
+        count=$(awk '{ print $1 }' <<< "${line/\:}")
+        hue=$(awk '{ print $2 }' <<< "$line" | sed -E 's/\(|\)//g' | awk -F ',' '{ print $1 }' | awk '{ print int($1+0.5) }')
+        ((total_count += count))
+        ((total_hue += hue))
+      fi
+    done
+    initial_hue=$((total_hue / total_count))
+    initial_hue=146
+    echo "initial_hue : $initial_hue"
+    hue_diff=$((foreground_hue - initial_hue))
+    echo "hue_diff : $hue_diff"
+    mod=$(((hue_diff * 100/180) + 100))
+    echo "mod : $mod"
+    convert "$icon" -modulate 100,100,"$mod" "${RVF_DIR}/tmp/${icon_name}"
+    echo ""
+
+  done
+}
+
 render_icons() {
   mkdir -p "${RVF_DIR}/output/icons"
   # TODO: The idea is that you might just want a solid color. If that's the case another function will have to be written / used
-  render_icons_gradient
+  #render_icons_gradient
+  render_icons_hue_shift
 }
 
 clean
